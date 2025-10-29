@@ -218,7 +218,7 @@ class CustomClassificationTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-def train_and_evaluate(task, data_path):
+def train_and_evaluate(data_path):
     """
         Train and evaluate a model with a given set of hyperparameters.
     """
@@ -237,7 +237,7 @@ def train_and_evaluate(task, data_path):
 
     wandb.run.name = run_name
     # Load CamemBERT model
-    model_init_fn = get_model_init_function(task, wandb.config.model_name, wandb.config.dropout)
+    model_init_fn = get_model_init_function(wandb.config.model_name, wandb.config.dropout)
     # Load data
     dataset = load_and_stratified_split(data_path)
     # Load CamemBERT tokenizer
