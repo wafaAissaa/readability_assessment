@@ -12,6 +12,7 @@ import argparse
 import os
 import csv
 import torch.nn.functional as F
+from datasets import ClassLabel
 
 from utils import save_experiment_results
 
@@ -27,7 +28,7 @@ distributions = None
 
 def get_distributions(data_path):
     global distributions
-    input_file = pd.read_csv(data_path, index_col='text_indice')
+    input_file = pd.read_csv(data_path, index_col='text_indice', sep='\t')
     labels = input_file[['gold_score_20_label']]
     counts = labels.value_counts(normalize=True) * 100
     distributions = [float(counts.loc[l].values[0]) for l in label_to_id.keys()]
@@ -88,7 +89,7 @@ def load_and_stratified_split(data_path, label_column="gold_score_20_label",
     Returns a DatasetDict with keys: 'train', 'validation', 'test'.
     """
     # Load the dataset
-    dataset_dict = load_dataset("csv", data_files=data_path)
+    dataset_dict = load_dataset("csv", delimiter="\t", data_files=data_path)
     dataset = dataset_dict["train"] if "train" in dataset_dict else list(dataset_dict.values())[0]
 
     # Map labels to integers
@@ -97,6 +98,8 @@ def load_and_stratified_split(data_path, label_column="gold_score_20_label",
         batched=True,
         desc="Mapping labels"
     )
+
+    dataset = dataset.cast_column("labels", ClassLabel(names=list(label_to_id.keys())))
 
     # First split: extract test set
     tmp = dataset.train_test_split(
@@ -350,7 +353,8 @@ if __name__ == "__main__":
             "model_name": {
                 "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
             "learning_rate": {"values": [1e-5, 1e-4]},  # , 1e-3
-            "batch_size": {"values": [16, 32, 64]},
+            "batch_size": {"values": [2]},
+            #"batch_size": {"values": [16, 32, 64]},
             "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
             "dropout": {"values": [0.1, 0.3, 0.5]},
             "epochs": {"value": 200},
