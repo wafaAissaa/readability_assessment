@@ -10,8 +10,10 @@ import wandb
 from transformers import Trainer, TrainingArguments, set_seed
 import argparse
 import os
-
+import csv
 import torch.nn.functional as F
+
+from utils import save_experiment_results
 
 set_seed(42)
 torch.manual_seed(42)
@@ -62,9 +64,7 @@ def load_model(model_name, dropout):
     model = CamembertForSequenceClassification.from_pretrained(model_name, num_labels=4,
                                                                    hidden_dropout_prob=dropout,
                                                                    attention_probs_dropout_prob=dropout)
-
     return model
-
 
 def get_model_init_function(model_name, dropout):
     def model_init():
@@ -79,30 +79,52 @@ def get_model_init_function(model_name, dropout):
     return model_init
 
 
-def load_fold(dataset, fold_id):
+def load_and_stratified_split(data_path, label_column="gold_score_20_label",
+                              test_size=0.1, val_size=0.1, seed=42):
     """
-    Returns fold train, validation, and test datasets.
+    Loads a CSV dataset, encodes string labels as integers using a predefined
+    `label_to_id`, and produces stratified train/validation/test splits.
+
+    Returns a DatasetDict with keys: 'train', 'validation', 'test'.
     """
-    folds_indexes_dico = load_fold_indexes('../data')
-    train_splits_index = folds_indexes_dico['train_splits_index']
-    val_splits_index = folds_indexes_dico['val_splits_index']
-    test_splits_index = folds_indexes_dico['test_splits_index']
+    # Load the dataset
+    dataset_dict = load_dataset("csv", data_files=data_path)
+    dataset = dataset_dict["train"] if "train" in dataset_dict else list(dataset_dict.values())[0]
 
-    # Convert to pandas dataframe for stratified split
-    df = pd.DataFrame(dataset["train"])
-    df.set_index("text_indice", inplace=True)
+    # Map labels to integers
+    dataset = dataset.map(
+        lambda batch: {"labels": [label_to_id[label] for label in batch[label_column]]},
+        batched=True,
+        desc="Mapping labels"
+    )
 
-    train_df = df.loc[train_splits_index[fold_id]]
-    val_df = df.loc[val_splits_index[fold_id]]
-    test_df = df.loc[test_splits_index[fold_id]]
+    # First split: extract test set
+    tmp = dataset.train_test_split(
+        test_size=test_size,
+        stratify_by_column="labels",
+        seed=seed,
+    )
 
-    # Convert pandas dataframes back to Hugging Face datasets
-    train_dataset = Dataset.from_pandas(train_df)
-    eval_dataset = Dataset.from_pandas(val_df)
-    test_dataset = Dataset.from_pandas(test_df)
+    test_ds = tmp["test"]
+    remaining = tmp["train"]
 
-    # Return dataset splits as a DatasetDict
-    return DatasetDict({'train': train_dataset, 'eval': eval_dataset, 'test': test_dataset})
+    # Second split: extract validation set from remaining data
+    val_rel_size = val_size / (1.0 - test_size)
+    tmp2 = remaining.train_test_split(
+        test_size=val_rel_size,
+        stratify_by_column="labels",
+        seed=seed,
+    )
+
+    train_ds = tmp2["train"]
+    val_ds = tmp2["test"]
+
+    # Combine all splits into a DatasetDict
+    return DatasetDict({
+        "train": train_ds,
+        "validation": val_ds,
+        "test": test_ds
+    })
 
 
 tokenizer = None
@@ -117,12 +139,16 @@ def tokenize_function(examples):
 
 
 # evaluate on classification
-metric_classification = evaluate.load("accuracy")
+metric_accuracy = evaluate.load("accuracy")
+metric_f1 = evaluate.load("f1")  # averaging is chosen at compute-time
+
 
 def compute_metrics_classification(eval_pred):
     logits, labels = eval_pred
-    predictions = np.argmax(logits, axis=-1)
-    return metric_classification.compute(predictions=predictions, references=labels)
+    preds = np.argmax(logits, axis=-1)
+    acc = metric_accuracy.compute(predictions=preds, references=labels)["accuracy"]
+    f1m = metric_f1.compute(predictions=preds, references=labels, average="macro")["f1"]
+    return {"accuracy": acc, "f1_macro": f1m}
 
 
 # Custom trainer to overwrite the loss function
@@ -163,9 +189,8 @@ class CustomClassificationTrainer(Trainer):
         outputs = model(**inputs)
         logits = outputs.logits
 
-        alpha = 1.5  # [1, 1.5, 2]
+        alpha = wandb.config["OLL_alpha"]
 
-        logits = model(**inputs).logits
         probas = F.softmax(logits, dim=1)
         dist_matrix = [[0, 1, 2, 3], [1, 0, 1, 3], [2, 1, 0, 1], [3, 2, 1, 0]]  # distance entre les classes
         true_labels = [4 * [labels[k].item()] for k in range(len(labels))]  # 4 nb classe
@@ -179,9 +204,6 @@ class CustomClassificationTrainer(Trainer):
         # inverse of the distributions
         inverse_distributions = [1 / x for x in distributions]
         # normalize the inverse distributions
-        inverse_distributions = [x / sum(inverse_distributions) for x in
-                                 inverse_distributions]
-
         class_weights = torch.tensor([x / sum(inverse_distributions) for x in inverse_distributions],
                                      device=logits.device)
         sample_weights = class_weights[labels]
@@ -196,34 +218,16 @@ class CustomClassificationTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-class CustomRegressionTrainer(Trainer):
-    def compute_loss(self, model, inputs, num_items_in_batch=None, return_outputs=False):
-        """
-        Custom loss function for training.
-        By default, Trainer uses MSE for regression.
-        This can be overridden here for custom loss.
-        """
-        labels = inputs.pop("labels")
-        outputs = model(**inputs)
-        logits = outputs.logits
-
-        loss_fn = torch.nn.MSELoss()
-        loss = loss_fn(logits.squeeze(), labels)
-
-        return (loss, outputs) if return_outputs else loss
-
-
-def train_and_evaluate(task, data_path, fold_id=0, ):
+def train_and_evaluate(task, data_path):
     """
         Train and evaluate a model with a given set of hyperparameters.
     """
     wandb.login()  # not useful when we already have the API key
-    wandb.init(project="DL_ordinal_weighted_test", entity="iRead4skills")
-    run_name = "name:%s_lr:%s_bs:%s_fold:%s_wd:%s_drop:%s" % (wandb.config.model_name, wandb.config.learning_rate,
-                                                              wandb.config.batch_size, fold_id,
-                                                              wandb.config.weight_decay, wandb.config.dropout)
+    wandb.init(project="readability_assessment", entity="iRead4skills")
+    run_name = "name:%s_lr:%s_bs:%s_wd:%s_drop:%s_alpha:%s" % (wandb.config.model_name, wandb.config.learning_rate,
+                                                              wandb.config.batch_size, wandb.config.weight_decay, wandb.config.dropout, wandb.config.OLL_alpha)
 
-    folder_path = '/globalscratch/ucl/cental/troux/models_ordinal_weighted/' + run_name
+    folder_path = '/globalscratch/ucl/cental/waissa/readability_assessment/' + run_name
 
     if os.path.isdir(folder_path):
         print(f"The folder '{folder_path}' exists. Training skipped")
@@ -235,28 +239,28 @@ def train_and_evaluate(task, data_path, fold_id=0, ):
     # Load CamemBERT model
     model_init_fn = get_model_init_function(task, wandb.config.model_name, wandb.config.dropout)
     # Load data
-    dataset = load_data(data_path, task)
+    dataset = load_and_stratified_split(data_path)
     # Load CamemBERT tokenizer
     get_distributions(data_path)
     initialize_tokenizer(wandb.config.model_name)
     # Apply tokenization to dataset
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
-    fold_dataset = load_fold(tokenized_datasets, fold_id)
-    train_fold = fold_dataset['train']
-    eval_fold = fold_dataset['eval']
-    test_fold = fold_dataset['test']
+    # Assign splits correctly
+    train_split = tokenized_datasets["train"]
+    eval_split = tokenized_datasets["validation"]
+    test_split = tokenized_datasets["test"]
 
     # List all columns except the ones you want to keep
-    columns_to_remove = [col for col in train_fold.column_names if col not in ['input_ids', 'attention_mask', 'labels']]
+    columns_to_remove = [col for col in train_split.column_names if col not in ['input_ids', 'attention_mask', 'labels']]
 
     # Remove the unnecessary columns from each split
-    train_dataset = train_fold.remove_columns(columns_to_remove)
-    eval_dataset = eval_fold.remove_columns(columns_to_remove)
-    test_dataset = test_fold.remove_columns(columns_to_remove)
+    train_dataset = train_split.remove_columns(columns_to_remove)
+    eval_dataset = eval_split.remove_columns(columns_to_remove)
+    test_dataset = test_split.remove_columns(columns_to_remove)
 
-    if task == 'classification':
-        output_dir = '/globalscratch/ucl/cental/troux/models_ordinal_weighted/' + run_name
+
+    output_dir = '/globalscratch/ucl/cental/waissa/readability_assessment/' + run_name
 
     # Training configuration
     training_args = TrainingArguments(
@@ -292,26 +296,38 @@ def train_and_evaluate(task, data_path, fold_id=0, ):
     # Train model
     trainer.train()
 
-    # Evaluation on validation
+    # ---- Evaluate on validation set ----
     metrics_val = trainer.evaluate()
-    print("Validation Results : ", metrics_val)
+    print("Validation Results:", metrics_val)
 
-    eval_type = 'eval_accuracy'
+    # Log both accuracy and macro-F1 (and loss)
+    wandb.log({
+        'val_accuracy': metrics_val.get('eval_accuracy'),
+        'val_f1_macro': metrics_val.get('eval_f1_macro'),
+        'val_loss': metrics_val.get('eval_loss'),
+    })
 
-    wandb.log({'val_accuracy': metrics_val[eval_type], 'val_loss': metrics_val['eval_loss']})
-    # Evaluation on test
+    # ---- Evaluate on test set ----
     metrics_test = trainer.evaluate(test_dataset)
-    print("Test Results : ", metrics_test)
-    wandb.log({'Test_accuracy': metrics_test[eval_type], 'Test_loss': metrics_test['eval_loss']})
+    print("Test Results:", metrics_test)
 
-    # Save scores accorded to the model
-    with open("results/all_DL_scores_ordinal_weighted_" + str(fold_id) + ".txt", "a") as f:
-        params_list = str(wandb.config["learning_rate"]) + "," + str(trainer.state.epoch) + "," + str(
-            wandb.config["batch_size"]) + "," + str(wandb.config["weight_decay"]) + "," + str(
-            wandb.config["dropout"])
-        f.write(run_name + "," + wandb.config.model_name + "," + str(fold_id) + "," + params_list + "," + str(
-            metrics_val['eval_loss']) + "," + str(metrics_val[eval_type]) + "," + str(
-            metrics_test['eval_loss']) + "," + str(metrics_test[eval_type]) + "\n")
+    # Log both accuracy and macro-F1 (and loss)
+    wandb.log({
+        'test_accuracy': metrics_test.get('eval_accuracy'),
+        'test_f1_macro': metrics_test.get('eval_f1_macro'),
+        'test_loss': metrics_test.get('eval_loss'),
+    })
+
+
+    # Save to CSV file
+    save_experiment_results(
+        run_name=run_name,
+        wandb_config=wandb.config,
+        trainer_state=trainer.state,
+        metrics_val=metrics_val,
+        metrics_test=metrics_test,
+        output_dir="results/scores.csv"
+    )
 
     wandb.finish()
 
@@ -320,45 +336,29 @@ def train_and_evaluate(task, data_path, fold_id=0, ):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--fold_id', type=int, default=0, help="add the fold id 0 to 4")
+    #parser.add_argument('--fold_id', type=int, default=0, help="add the fold id 0 to 4")
     args = parser.parse_args()
 
     data_path = './data/Qualtrics_Annotations_B.csv'
-
-    # Hyperparameter Grid
-    # sweep_configuration = {
-    #     "name": "launch",
-    #     "method": "grid",
-    #     "run_cap": 80,
-    #     "metric": {"goal": "maximize", "name": "val_accuracy"},
-    #     "parameters": {
-    #         "model_name": {"values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
-    #         "learning_rate": {"values": [1e-5, 1e-4]}, # , 1e-3
-    #         "batch_size": {"values": [16, 32, 64]},
-    #         "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
-    #         "dropout": {"values": [0.1]}, # , 0.3, 0.5
-    #         "epochs": {"value": 200},
-    #         "patience": {"value": 10}
-    #     },
-    # }
 
     sweep_configuration = {
         "name": "launch",
         "method": "grid",
         "run_cap": 80,
-        "metric": {"goal": "maximize", "name": "val_accuracy"},
+        "metric": {"goal": "maximize", "name": "val_f1_macro"},
         "parameters": {
             "model_name": {
                 "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
             "learning_rate": {"values": [1e-5, 1e-4]},  # , 1e-3
             "batch_size": {"values": [16, 32, 64]},
             "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
-            "dropout": {"values": [0.1]},  # , 0.3, 0.5
+            "dropout": {"values": [0.1, 0.3, 0.5]},
             "epochs": {"value": 200},
-            "patience": {"value": 10}
+            "patience": {"value": 10},
+            "OLL_alpha": {"values": [1, 1.5, 2]}
         },
     }
 
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project="DL_ordinal_weighted_test", entity="iRead4skills")
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
 
-    wandb.agent(sweep_id, function=lambda: train_and_evaluate(data_path, fold_id=args.fold_id))
+    wandb.agent(sweep_id, function=lambda: train_and_evaluate(data_path))
