@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=train-DL-0
-#SBATCH --output="output0.txt"
+#SBATCH --output="outputs/output0.txt"
 #SBATCH --partition=gpu
 #SBATCH --gres="gpu"
 #SBATCH --qos="preemptible"
