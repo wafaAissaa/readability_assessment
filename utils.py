@@ -28,7 +28,7 @@ def save_experiment_results(run_name, wandb_config, trainer_state,
     # Define CSV columns
     fieldnames = [
         "run_name", "model_name", "learning_rate", "epoch",
-        "batch_size", "weight_decay", "dropout", "OLL_alpha"
+        "batch_size", "weight_decay", "dropout", "OLL_alpha",
         "val_loss", "val_accuracy", "val_f1_macro",
         "test_loss", "test_accuracy", "test_f1_macro"
     ]
