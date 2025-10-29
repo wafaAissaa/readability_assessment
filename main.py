@@ -353,8 +353,7 @@ if __name__ == "__main__":
             "model_name": {
                 "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
             "learning_rate": {"values": [1e-5, 1e-4]},  # , 1e-3
-            "batch_size": {"values": [2]},
-            #"batch_size": {"values": [16, 32, 64]},
+            "batch_size": {"values": [16, 32, 64]},
             "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
             "dropout": {"values": [0.1, 0.3, 0.5]},
             "epochs": {"value": 200},
