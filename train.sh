@@ -8,4 +8,4 @@
 #SBATCH --ntasks=1
 #SBATCH --constraint=TeslaA100|GeForceRTX3090|TeslaV100
 
-python train.py
+python main.py
