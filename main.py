@@ -347,13 +347,13 @@ if __name__ == "__main__":
     sweep_configuration = {
         "name": "launch",
         "method": "grid",
-        "run_cap": 80,
+        "run_cap": 200,
         "metric": {"goal": "maximize", "name": "val_f1_macro"},
         "parameters": {
             "model_name": {
                 "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
             "learning_rate": {"values": [1e-5, 1e-4]},  # , 1e-3
-            "batch_size": {"values": [16, 32, 64]},
+            "batch_size": {"values": [16, 32]},
             "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
             "dropout": {"values": [0.1, 0.3, 0.5]},
             "epochs": {"value": 200},
@@ -361,6 +361,7 @@ if __name__ == "__main__":
             "OLL_alpha": {"values": [1, 1.5, 2]}
         },
     }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
+    #sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
+    sweep_id = "iRead4skills/readability_assessment/f76o3nu3"
 
     wandb.agent(sweep_id, function=lambda: train_and_evaluate(data_path))
