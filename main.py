@@ -347,7 +347,7 @@ if __name__ == "__main__":
     sweep_configuration = {
         "name": "launch",
         "method": "grid",
-        "run_cap": 200,
+        "run_cap": 110,
         "metric": {"goal": "maximize", "name": "val_f1_macro"},
         "parameters": {
             "model_name": {
@@ -361,7 +361,7 @@ if __name__ == "__main__":
             "OLL_alpha": {"values": [1, 1.5, 2]}
         },
     }
-    #sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
-    sweep_id = "iRead4skills/readability_assessment/f76o3nu3"
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
+    #sweep_id = "iRead4skills/readability_assessment/f76o3nu3"
 
     wandb.agent(sweep_id, function=lambda: train_and_evaluate(data_path))

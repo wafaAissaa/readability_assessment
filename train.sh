@@ -6,6 +6,7 @@
 #SBATCH --qos="preemptible"
 #SBATCH --mem-per-cpu=10000
 #SBATCH --ntasks=1
+#SBATCH --time=24:00:00
 #SBATCH --constraint=TeslaA100|GeForceRTX3090|TeslaV100
 
 python main.py
