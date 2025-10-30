@@ -329,7 +329,7 @@ def train_and_evaluate(data_path):
         trainer_state=trainer.state,
         metrics_val=metrics_val,
         metrics_test=metrics_test,
-        output_dir="results/scores.csv"
+        output_path="results/scores.csv"
     )
 
     wandb.finish()
@@ -362,6 +362,6 @@ if __name__ == "__main__":
         },
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
-    #sweep_id = "iRead4skills/readability_assessment/f76o3nu3"
+    #sweep_id = "iRead4skills/readability_assessment/f76o3nu3" # find ID and use this to not run from scratch
 
     wandb.agent(sweep_id, function=lambda: train_and_evaluate(data_path))
