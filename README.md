@@ -1,0 +1,65 @@
+Oct 31:
+
+sweep ID vpaw13df
+JOBID 63553279
+sweep_configuration = {
+        "name": "launch",
+        "method": "grid",
+        "run_cap": 110,
+        "metric": {"goal": "maximize", "name": "val_f1_macro"},
+        "parameters": {
+            "model_name": {
+                "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
+            "learning_rate": {"values": [1e-5, 1e-4]},  # , 1e-3
+            "batch_size": {"values": [16, 32]},
+            "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
+            "dropout": {"values": [0.1, 0.3, 0.5]},
+            "epochs": {"value": 200},
+            "patience": {"value": 10},
+            "OLL_alpha": {"values": [1, 1.5, 2]}
+        },
+    }
+
+max cap will stop before reatching all the OLL_alpha
+I also want to experiment with higher learning rate.
+I dont want to stop the sweep, so I created a new config:
+Solution: run one sweep per OLL_alpha
+
+sweep_configuration = {
+        "name": "launch",
+        "method": "grid",
+        "run_cap": 110,
+        "metric": {"goal": "maximize", "name": "val_f1_macro"},
+        "parameters": {
+            "model_name": {
+                "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
+            "learning_rate": {"values": [1e-5, 1e-4, 1e-3]},
+            "batch_size": {"values": [16, 32]},
+            "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
+            "dropout": {"values": [0.1, 0.3, 0.5]},
+            "epochs": {"value": 200},
+            "patience": {"value": 10},
+            "OLL_alpha": {"values": [1.5]}
+        },
+    }
+
+
+sweep_configuration = {
+        "name": "launch",
+        "method": "grid",
+        "run_cap": 110,
+        "metric": {"goal": "maximize", "name": "val_f1_macro"},
+        "parameters": {
+            "model_name": {
+                "values": ['camembert-base', 'almanach/camembertv2-base', 'dangvantuan/sentence-camembert-base']},
+            "learning_rate": {"values": [1e-5, 1e-4, 1e-3]},
+            "batch_size": {"values": [16, 32]},
+            "weight_decay": {"values": [1e-5, 1e-4, 1e-3]},
+            "dropout": {"values": [0.1, 0.3, 0.5]},
+            "epochs": {"value": 200},
+            "patience": {"value": 10},
+            "OLL_alpha": {"values": [2]}
+        },
+    }
+
+

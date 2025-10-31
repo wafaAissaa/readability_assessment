@@ -340,6 +340,13 @@ def train_and_evaluate(data_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #parser.add_argument('--fold_id', type=int, default=0, help="add the fold id 0 to 4")
+    parser.add_argument(
+        '--OLL_alpha',
+        type=float,
+        nargs='+',  # allows passing one or several values
+        required=True,
+        help="Values for OLL_alpha (e.g. --OLL_alpha 1 1.5 2)"
+    )
     args = parser.parse_args()
 
     data_path = './data/Qualtrics_Annotations_B.csv'
@@ -347,7 +354,7 @@ if __name__ == "__main__":
     sweep_configuration = {
         "name": "launch",
         "method": "grid",
-        "run_cap": 110,
+        "run_cap": 200,
         "metric": {"goal": "maximize", "name": "val_f1_macro"},
         "parameters": {
             "model_name": {
@@ -358,7 +365,7 @@ if __name__ == "__main__":
             "dropout": {"values": [0.1, 0.3, 0.5]},
             "epochs": {"value": 200},
             "patience": {"value": 10},
-            "OLL_alpha": {"values": [1, 1.5, 2]}
+            "OLL_alpha": {"values": args.OLL_alpha}
         },
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
