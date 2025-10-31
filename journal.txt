@@ -26,6 +26,7 @@ I dont want to stop the sweep, so I created a new config:
 Solution: run one sweep per OLL_alpha
 
 JOBID 63711981
+sweep ID mbbz6u56
 sbatch train.sh 1.5
 sweep_configuration = {
         "name": "launch",
@@ -46,6 +47,7 @@ sweep_configuration = {
     }
 
 JOBID 63712326
+sweepID avqp7v0i
 sbatch train.sh 2
 
 

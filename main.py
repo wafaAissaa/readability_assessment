@@ -368,7 +368,13 @@ if __name__ == "__main__":
             "OLL_alpha": {"values": args.OLL_alpha}
         },
     }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
+
+    print("args.OLL_alpha", args.OLL_alpha)
+    if len(args.OLL_alpha) == 1 and args.OLL_alpha[0] == 1.0:
+        print("resuming sweep ID where OLL_alpha is 1")
+        sweep_id = "iRead4skills/readability_assessment/vpaw13df"  # find ID and use this to not run from scratch
+    else:
+        sweep_id = wandb.sweep(sweep=sweep_configuration, project="readability_assessment", entity="iRead4skills")
     #sweep_id = "iRead4skills/readability_assessment/f76o3nu3" # find ID and use this to not run from scratch
 
     wandb.agent(sweep_id, function=lambda: train_and_evaluate(data_path))
