@@ -51,4 +51,14 @@ sweepID avqp7v0i
 sbatch train.sh 2
 
 
+sweep ID vpaw13df resumed after crash bcz of git
+JOBID 63712370
 
+sbatch train.sh 1.5
+alpha 1.5 rerun again from scratch
+JOBID 63712471
+
+1 Nov
+sbatch train.sh 2
+alpha 2 rerun again from scratch
+JOBID 63713639
